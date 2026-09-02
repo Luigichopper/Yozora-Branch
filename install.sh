@@ -217,7 +217,7 @@ check_dependencies() {
         echo -e "To ensure full video playback, BitTorrent streaming, and UI rendering, install them with:"
         
         if [ "$DISTRO_ID" = "arch" ] || [[ "$DISTRO_LIKE" == *"arch"* ]]; then
-            echo -e "  ${C_CYAN}sudo pacman -S --needed mpv webkit2gtk-4.1 webkit2gtk libsoup libsoup3 gtk3 pkgconf && (command -v yay &>/dev/null && yay -S rqbit || cargo install rqbit)${C_RESET}"
+            echo -e "  ${C_CYAN}sudo pacman -S --needed mpv webkit2gtk-4.1 libsoup3 gtk3 pkgconf && (command -v yay &>/dev/null && yay -S rqbit || cargo install rqbit)${C_RESET}"
         elif [ "$DISTRO_ID" = "ubuntu" ] || [ "$DISTRO_ID" = "debian" ] || [[ "$DISTRO_LIKE" == *"debian"* ]] || [[ "$DISTRO_LIKE" == *"ubuntu"* ]]; then
             echo -e "  ${C_CYAN}sudo apt install mpv libwebkit2gtk-4.1-dev libsoup2.4-dev libsoup-3.0-dev libgtk-3-dev pkg-config && cargo install rqbit${C_RESET}"
         elif [ "$DISTRO_ID" = "fedora" ] || [[ "$DISTRO_LIKE" == *"fedora"* ]]; then

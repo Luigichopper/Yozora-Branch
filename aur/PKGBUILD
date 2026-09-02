@@ -11,14 +11,13 @@ depends=(
   'rqbit'
   'gtk3'
   'webkit2gtk-4.1'
-  'libsoup'
   'libsoup3'
   'xdg-desktop-portal-hyprland'
 )
 optdepends=(
   'matugen: dynamic Material You color palette generation'
 )
-makedepends=('nodejs' 'npm' 'cargo' 'git' 'pkgconf')
+makedepends=('nodejs' 'npm' 'rust' 'git' 'pkgconf')
 provides=('yozora')
 conflicts=('yozora' 'yozora-bin')
 source=("git+https://github.com/Luigichopper/Yozora.git"
