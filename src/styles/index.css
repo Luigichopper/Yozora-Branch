@@ -68,25 +68,32 @@ html, body, #root {
   position: relative;
 }
 
-/* Wayland Titlebar */
-.wayland-titlebar {
+/* Wayland & Windows Custom Titlebars */
+.wayland-titlebar,
+.windows-titlebar {
   height: 42px;
   min-height: 42px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  background: rgba(21, 18, 24, 0.6);
+  background: rgba(21, 18, 24, 0.65);
   backdrop-filter: blur(20px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   z-index: 50;
   -webkit-app-region: drag;
 }
 
+.windows-titlebar {
+  padding-right: 0;
+  background: rgba(21, 18, 24, 0.75);
+}
+
 .window-controls {
   display: flex;
   gap: 8px;
   align-items: center;
+  -webkit-app-region: no-drag;
 }
 
 .window-dot {
@@ -94,14 +101,84 @@ html, body, #root {
   height: 12px;
   border-radius: 50%;
   cursor: pointer;
-  transition: transform 0.2s ease, opacity 0.2s ease;
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), opacity 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  color: rgba(0,0,0,0.6);
 }
 .window-dot:hover {
-  transform: scale(1.15);
+  transform: scale(1.18);
+}
+.window-dot:active {
+  transform: scale(0.92);
 }
 .window-dot.close { background: #ff5f56; }
 .window-dot.minimize { background: #ffbd2e; }
 .window-dot.maximize { background: #27c93f; }
+
+/* Windows 11 Fluent Caption Buttons */
+.win-caption-group {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  -webkit-app-region: no-drag;
+}
+
+.win-caption-btn {
+  width: 46px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  outline: none;
+}
+
+.win-caption-btn:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--md-sys-color-on-surface);
+}
+
+.win-caption-btn:active {
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+.win-caption-btn.win-close:hover {
+  background-color: #e81123 !important;
+  color: #ffffff !important;
+}
+
+.win-caption-btn.win-close:active {
+  background-color: #bf101f !important;
+}
+
+.os-badge-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.2s ease;
+  -webkit-app-region: no-drag;
+}
+
+.os-badge-btn:hover {
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-primary);
+  border-color: var(--md-sys-color-primary);
+}
 
 .app-title-chip {
   display: flex;

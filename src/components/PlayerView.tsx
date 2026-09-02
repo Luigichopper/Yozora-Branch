@@ -156,7 +156,15 @@ export const PlayerView: React.FC = () => {
         setIsLoadingStream(true);
         try {
           const resolved = await streamService.resolveEpisodeStream(
-            playerState.anime.id,
+            {
+              id: playerState.anime.id,
+              title: playerState.anime.title,
+              romajiTitle: playerState.anime.romajiTitle,
+              englishTitle: playerState.anime.englishTitle,
+              type: playerState.anime.type,
+              season: playerState.anime.season,
+              year: playerState.anime.year
+            },
             playerState.anime.title,
             playerState.anime.romajiTitle,
             playerState.episode.epNumber,
@@ -320,9 +328,21 @@ export const PlayerView: React.FC = () => {
     }));
   };
 
-  // Video error handling
+  // Video error handling with automatic fallback to next available mirror
   const handleVideoError = () => {
     console.warn(`[Player] Video load error on source: ${currentVideoSrc}`);
+    
+    // Check if there are other alternative mirrors available
+    const otherMirrors = streamMirrors.filter(m => m.url && m.url !== currentVideoSrc);
+    if (otherMirrors.length > 0) {
+      const nextMirror = otherMirrors[0];
+      showToast(`Stream mirror failed. Auto-switching to: ${nextMirror.server}...`, 'info');
+      setCurrentVideoSrc(nextMirror.url);
+      setActiveMirrorTitle(nextMirror.server);
+      setHasVideoError(false);
+      return;
+    }
+
     setHasVideoError(true);
     setIsPlaying(false);
   };

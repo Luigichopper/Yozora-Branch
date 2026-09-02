@@ -33,6 +33,8 @@ export interface ToastMessage {
   type: 'info' | 'success' | 'warning' | 'error';
 }
 
+export type OsMode = 'auto' | 'arch' | 'windows';
+
 interface AppContextType {
   currentView: ActiveView;
   setCurrentView: (view: ActiveView) => void;
@@ -41,6 +43,13 @@ interface AppContextType {
   isScheduleOpen: boolean;
   setIsScheduleOpen: (open: boolean) => void;
   
+  // OS & Window Layout Mode
+  osMode: OsMode;
+  resolvedOs: 'arch' | 'windows';
+  setOsMode: (mode: OsMode) => Promise<void>;
+  isMaximized: boolean;
+  setIsMaximized: (max: boolean) => void;
+
   // Direct Playback
   playerState: ActivePlayerState | null;
   openPlayer: (anime: AnimeItem, episode?: Episode, videoUrl?: string, sourceTitle?: string) => void;
@@ -77,6 +86,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [playerState, setPlayerState] = useState<ActivePlayerState | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   
+  // OS & Window Layout Mode
+  const [osMode, setOsModeState] = useState<OsMode>('auto');
+  const [resolvedOs, setResolvedOs] = useState<'arch' | 'windows'>('arch');
+  const [isMaximized, setIsMaximized] = useState<boolean>(false);
+
   // Theme state
   const [activePalette, setActivePaletteState] = useState<MatugenPalette>(MATUGEN_PALETTES[0]);
   const [blurEnabled, setBlurEnabled] = useState<boolean>(true);
@@ -84,6 +98,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Library & tracking state backed by IndexedDB
   const [library, setLibrary] = useState<Record<string, LibraryEntry>>({});
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  // Determine resolved OS from osMode & userAgent
+  const computeResolvedOs = (mode: OsMode): 'arch' | 'windows' => {
+    if (mode === 'windows') return 'windows';
+    if (mode === 'arch') return 'arch';
+    if (typeof navigator !== 'undefined') {
+      const ua = (navigator.userAgent || '').toLowerCase();
+      const plat = (navigator.platform || '').toLowerCase();
+      if (ua.includes('win') || plat.includes('win')) {
+        return 'windows';
+      }
+    }
+    return 'arch';
+  };
 
   // Initial load from IndexedDB
   useEffect(() => {
@@ -95,7 +123,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setActivePaletteState(found);
         applyMatugenTheme(found);
 
-        // 2. Library
+        // 2. OS Mode
+        const savedOsMode = await db.getSetting<OsMode>('yozora_os_mode', 'auto');
+        setOsModeState(savedOsMode);
+        setResolvedOs(computeResolvedOs(savedOsMode));
+
+        // 3. Library
         const dbLib = await db.getLibrary();
         setLibrary(dbLib);
       } catch (err) {
@@ -105,6 +138,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     initFromDb();
   }, []);
+
+  const setOsMode = async (mode: OsMode) => {
+    setOsModeState(mode);
+    const resolved = computeResolvedOs(mode);
+    setResolvedOs(resolved);
+    await db.saveSetting('yozora_os_mode', mode);
+    showToast(
+      mode === 'auto'
+        ? `Window Mode: Auto-detected (${resolved === 'windows' ? 'Windows 11 Fluent' : 'Arch Linux Hyprland'})`
+        : mode === 'windows'
+        ? 'Window Mode: Windows 11 Fluent Caption Controls'
+        : 'Window Mode: Arch Linux Hyprland Wayland Dots',
+      'info'
+    );
+  };
 
   const showToast = (text: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
     const id = `toast_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
@@ -240,6 +288,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setSelectedAnime,
         isScheduleOpen,
         setIsScheduleOpen,
+        osMode,
+        resolvedOs,
+        setOsMode,
+        isMaximized,
+        setIsMaximized,
         playerState,
         openPlayer,
         closePlayer,

@@ -4,6 +4,7 @@ import { rqbitService } from './rqbitService';
 import { activeProvider } from './providers';
 import { TorrentSource } from '../types/anime';
 import { SubtitleTrack } from './subtitleService';
+import { AnimeMatcher } from './animeMatcher';
 
 export interface AnimeStreamSource {
   url: string;
@@ -16,35 +17,159 @@ export interface AnimeStreamSource {
   torrentId?: number;
 }
 
+export interface AnimeMetadataQuery {
+  id: string;
+  title: string;
+  romajiTitle?: string;
+  englishTitle?: string;
+  type?: string;
+  season?: string;
+  year?: number;
+}
+
 class StreamService {
   /**
-   * Resolve authentic video releases & direct streams for an anime episode
+   * Resolve authentic video releases & direct streams for an anime episode with parallel acceleration & precision matching
    */
   public async resolveEpisodeStream(
-    animeId: string,
-    animeTitle: string,
+    animeOrId: string | AnimeMetadataQuery,
+    animeTitle?: string,
     romajiTitle?: string,
     episodeNum = 1,
     audioMode: 'sub' | 'dub' | 'dual' | 'all' = 'all'
   ): Promise<AnimeStreamSource[]> {
+    // Construct normalized metadata target object
+    let targetMeta: AnimeMetadataQuery;
+    if (typeof animeOrId === 'object') {
+      targetMeta = animeOrId;
+    } else {
+      targetMeta = {
+        id: animeOrId,
+        title: animeTitle || animeOrId,
+        romajiTitle,
+        englishTitle: animeTitle
+      };
+    }
+
+    const primaryTitle = targetMeta.title || targetMeta.romajiTitle || targetMeta.id;
     const streamSources: AnimeStreamSource[] = [];
 
-    // 1. Fetch real BitTorrent releases from RSS indexers (Nyaa, SubsPlease, Anime Garden, Mikan)
+    // Run Direct Scraper Resolution and BitTorrent RSS Fetching in PARALLEL for maximum speed
+    const [directResult, torrentResult] = await Promise.allSettled([
+      this.resolveDirectHlsStreams(targetMeta, episodeNum, audioMode),
+      this.resolveTorrentRssSources(targetMeta, episodeNum, audioMode)
+    ]);
+
+    // 1. Add Direct High-Speed CDN & HLS streams FIRST (for instant < 1s playback)
+    if (directResult.status === 'fulfilled' && directResult.value.length > 0) {
+      streamSources.push(...directResult.value);
+    }
+
+    // 2. Append BitTorrent RSS releases
+    if (torrentResult.status === 'fulfilled' && torrentResult.value.length > 0) {
+      streamSources.push(...torrentResult.value);
+    }
+
+    return streamSources;
+  }
+
+  /**
+   * Direct scraper & CDN HLS stream resolution with precision season & episode disambiguation
+   */
+  private async resolveDirectHlsStreams(
+    targetMeta: AnimeMetadataQuery,
+    episodeNum = 1,
+    audioMode: 'sub' | 'dub' | 'dual' | 'all' = 'all'
+  ): Promise<AnimeStreamSource[]> {
+    const directSources: AnimeStreamSource[] = [];
+    const searchTerms = [
+      targetMeta.title,
+      targetMeta.englishTitle,
+      targetMeta.romajiTitle
+    ].filter((t): t is string => Boolean(t && t.trim()));
+
+    const uniqueTerms = Array.from(new Set(searchTerms));
+
+    for (const term of uniqueTerms) {
+      try {
+        const searchResults = await activeProvider.search(term, targetMeta, audioMode);
+        if (searchResults && searchResults.length > 0) {
+          // Use AnimeMatcher to select the genuinely correct season/show match
+          const { match: bestMatch } = AnimeMatcher.pickBestMatch(targetMeta, searchResults, audioMode);
+          
+          if (bestMatch) {
+            const episodes = await activeProvider.fetchEpisodes(bestMatch.id);
+            if (episodes && episodes.length > 0) {
+              // Exact episode match
+              const targetEp = episodes.find(e => e.number === episodeNum) ||
+                               episodes.find(e => e.id.endsWith(`-${episodeNum}`) || e.id.endsWith(`_${episodeNum}`)) ||
+                               episodes[episodeNum - 1] ||
+                               episodes[0];
+
+              if (targetEp) {
+                const streamData = await activeProvider.fetchSources(targetEp.id);
+                if (streamData.sources && streamData.sources.length > 0) {
+                  const mappedSubs: SubtitleTrack[] = (streamData.subtitles || []).map((sub, idx) => ({
+                    id: `prov_sub_${idx}_${sub.lang}`,
+                    url: sub.url,
+                    lang: sub.lang,
+                    label: sub.label || sub.lang || 'Subtitles',
+                    isDefault: sub.isDefault || sub.lang?.toLowerCase() === 'english'
+                  }));
+
+                  for (const source of streamData.sources) {
+                    if (source.url && source.url.trim()) {
+                      const qualityLabel = source.quality || 'Direct 1080p';
+                      const subDubBadge = bestMatch.subOrDub === 'dub' ? '[DUB]' : '[SUB]';
+                      directSources.push({
+                        url: source.url,
+                        isHls: source.isM3U8 || source.url.includes('.m3u8'),
+                        quality: qualityLabel,
+                        server: `${subDubBadge} Direct Stream (${bestMatch.title}) • EP ${targetEp.number}`,
+                        subOrDub: bestMatch.subOrDub,
+                        subtitles: mappedSubs
+                      });
+                    }
+                  }
+                }
+              }
+            }
+          }
+          if (directSources.length > 0) break;
+        }
+      } catch (err) {
+        console.warn('[StreamService] Direct stream scrape attempt failed:', err);
+      }
+    }
+
+    return directSources;
+  }
+
+  /**
+   * Fetch BitTorrent RSS releases
+   */
+  private async resolveTorrentRssSources(
+    targetMeta: AnimeMetadataQuery,
+    episodeNum = 1,
+    audioMode: 'sub' | 'dub' | 'dual' | 'all' = 'all'
+  ): Promise<AnimeStreamSource[]> {
+    const torrentStreams: AnimeStreamSource[] = [];
     try {
       const sources = await sourceService.getSourcesForAnime(
-        animeId || animeTitle,
-        animeTitle,
-        romajiTitle,
+        targetMeta.id,
+        targetMeta.title,
+        targetMeta.romajiTitle,
         audioMode
       );
+
       if (sources && sources.length > 0) {
         const epSources = sources.filter(s => s.episodeNum === episodeNum || !s.episodeNum);
         const targetSources = epSources.length > 0 ? epSources : sources;
 
-        for (let i = 0; i < Math.min(targetSources.length, 12); i++) {
+        for (let i = 0; i < Math.min(targetSources.length, 10); i++) {
           const src = targetSources[i];
           const subDubBadge = src.subOrDub === 'dub' ? '[DUB]' : src.subOrDub === 'dual' ? '[DUAL-AUDIO]' : '[SUB]';
-          streamSources.push({
+          torrentStreams.push({
             url: '',
             isHls: false,
             quality: `${src.resolution} (${src.codec || 'x264'})`,
@@ -57,56 +182,7 @@ class StreamService {
     } catch (err) {
       console.warn('[StreamService] Torrent RSS fetch error:', err);
     }
-
-    // 2. Direct Anime Scraper & Stream Extractor for direct HTML5 HLS video (if available)
-    const searchTerms = [romajiTitle, animeTitle].filter((t): t is string => Boolean(t && t.trim()));
-    for (const term of searchTerms) {
-      try {
-        const searchResults = await activeProvider.search(term);
-        if (searchResults && searchResults.length > 0) {
-          // If dub requested, try to find dub match first
-          let bestMatch = searchResults[0];
-          if (audioMode === 'dub') {
-            const dubMatch = searchResults.find(r => r.subOrDub === 'dub' || r.title.toLowerCase().includes('dub'));
-            if (dubMatch) bestMatch = dubMatch;
-          }
-
-          const episodes = await activeProvider.fetchEpisodes(bestMatch.id);
-          const targetEp = episodes.find(e => e.number === episodeNum) || episodes[episodeNum - 1] || episodes[0];
-          
-          if (targetEp) {
-            const streamData = await activeProvider.fetchSources(targetEp.id);
-            if (streamData.sources && streamData.sources.length > 0) {
-              const mappedSubs: SubtitleTrack[] = (streamData.subtitles || []).map((sub, idx) => ({
-                id: `prov_sub_${idx}_${sub.lang}`,
-                url: sub.url,
-                lang: sub.lang,
-                label: sub.label || sub.lang || 'Subtitles',
-                isDefault: sub.isDefault || sub.lang?.toLowerCase() === 'english'
-              }));
-
-              for (const source of streamData.sources) {
-                if (source.url && source.url.trim()) {
-                  streamSources.unshift({
-                    url: source.url,
-                    isHls: source.isM3U8 || source.url.includes('.m3u8'),
-                    quality: source.quality || 'Direct HLS 1080p',
-                    server: `Direct Stream (${bestMatch.title}) • EP ${targetEp.number}`,
-                    subOrDub: bestMatch.subOrDub,
-                    subtitles: mappedSubs
-                  });
-                }
-              }
-            }
-          }
-          if (streamSources.some(s => s.url)) break;
-        }
-      } catch {
-        // Continue
-      }
-    }
-
-    return streamSources;
+    return torrentStreams;
   }
 
   /**
@@ -153,7 +229,10 @@ class StreamService {
       if (Hls.isSupported()) {
         const hls = new Hls({
           enableWorker: true,
-          lowLatencyMode: true
+          lowLatencyMode: true,
+          backBufferLength: 90,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60
         });
         hls.loadSource(streamUrl);
         hls.attachMedia(videoElement);

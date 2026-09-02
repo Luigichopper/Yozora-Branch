@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, Terminal, Shield, Rss, Palette, Check, RefreshCw, Copy, ExternalLink, HardDrive, Image as ImageIcon, FileCode, CheckCircle2, Cpu, Play, Trash2, Database, AlertTriangle, Layers, Subtitles, Globe, Type, Sliders } from 'lucide-react';
+import { Sparkles, Terminal, Shield, Rss, Palette, Check, RefreshCw, Copy, ExternalLink, HardDrive, Image as ImageIcon, FileCode, CheckCircle2, Cpu, Play, Trash2, Database, AlertTriangle, Layers, Subtitles, Globe, Type, Sliders, Laptop, Layout } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { MATUGEN_PALETTES } from '../theme/matugen';
 import { sourceService, RSSFeedProvider } from '../services/sourceService';
@@ -10,7 +10,16 @@ import { db } from '../services/db';
 import { subtitleService, SUPPORTED_LANGUAGES, DEFAULT_SUBTITLE_STYLE, SubtitleStyleConfig, LanguagePreferenceConfig } from '../services/subtitleService';
 
 export const SettingsView: React.FC = () => {
-  const { activePalette, setActivePalette, blurEnabled, setBlurEnabled, showToast } = useApp();
+  const {
+    activePalette,
+    setActivePalette,
+    blurEnabled,
+    setBlurEnabled,
+    showToast,
+    osMode,
+    resolvedOs,
+    setOsMode
+  } = useApp();
   const [copiedRule, setCopiedRule] = useState(false);
   const [providers, setProviders] = useState<RSSFeedProvider[]>([]);
   const [customRssUrl, setCustomRssUrl] = useState('');
@@ -378,7 +387,162 @@ return {
         </div>
       </div>
 
-      {/* 2. Hyprland & Wayland Window Rules */}
+      {/* 2. Desktop Platform & Window TitleBar Variance */}
+      <div style={{ background: 'var(--md-sys-color-surface-container)', border: '1px solid var(--md-sys-color-outline-variant)', borderRadius: '24px', padding: '24px', marginBottom: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Layout size={20} color="var(--md-sys-color-primary)" />
+            <h2 style={{ fontSize: '17px', fontWeight: 700, color: '#fff' }}>
+              Desktop Platform & Window TitleBar Variance
+            </h2>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '12px', color: 'var(--md-sys-color-on-surface-variant)' }}>Active Style:</span>
+            <span style={{
+              background: 'var(--md-sys-color-surface-container-high)',
+              border: '1px solid var(--md-sys-color-primary)',
+              color: 'var(--md-sys-color-primary)',
+              borderRadius: '8px',
+              padding: '3px 10px',
+              fontSize: '11px',
+              fontWeight: 700,
+              fontFamily: 'var(--font-mono)'
+            }}>
+              {resolvedOs === 'windows' ? 'Windows 11 (Fluent / Caption Buttons)' : 'Arch Linux (Wayland / Hyprland Dots)'}
+            </span>
+          </div>
+        </div>
+
+        <p style={{ fontSize: '13px', color: 'var(--md-sys-color-on-surface-variant)', marginBottom: '16px' }}>
+          Customize whether the top titlebar uses <strong>Arch Linux Hyprland traffic dots</strong> on the left or authentic <strong>Windows 11 Fluent caption buttons</strong> on the right. All buttons (Close, Minimize, Maximize/Restore) are fully functional across both platforms.
+        </p>
+
+        {/* OS Selection Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+          {/* Option 1: Auto-Detect */}
+          <div
+            onClick={() => setOsMode('auto')}
+            style={{
+              background: osMode === 'auto' ? 'var(--md-sys-color-surface-container-highest)' : 'var(--md-sys-color-surface-container-high)',
+              border: `2px solid ${osMode === 'auto' ? 'var(--md-sys-color-primary)' : 'var(--md-sys-color-outline-variant)'}`,
+              borderRadius: '16px',
+              padding: '14px',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sparkles size={14} color="var(--md-sys-color-primary)" />
+                <span>Auto-Detect Platform</span>
+              </div>
+              {osMode === 'auto' && (
+                <span style={{ background: 'var(--md-sys-color-primary)', color: 'var(--md-sys-color-on-primary)', borderRadius: '50%', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Check size={11} />
+                </span>
+              )}
+            </div>
+            <p style={{ fontSize: '11px', color: 'var(--md-sys-color-on-surface-variant)', margin: 0 }}>
+              Automatically detects Windows vs Linux based on host system environment.
+            </p>
+          </div>
+
+          {/* Option 2: Arch Linux */}
+          <div
+            onClick={() => setOsMode('arch')}
+            style={{
+              background: osMode === 'arch' ? 'var(--md-sys-color-surface-container-highest)' : 'var(--md-sys-color-surface-container-high)',
+              border: `2px solid ${osMode === 'arch' ? 'var(--md-sys-color-primary)' : 'var(--md-sys-color-outline-variant)'}`,
+              borderRadius: '16px',
+              padding: '14px',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Terminal size={14} color="#1793d1" />
+                <span>Arch Linux (Hyprland)</span>
+              </div>
+              {osMode === 'arch' && (
+                <span style={{ background: 'var(--md-sys-color-primary)', color: 'var(--md-sys-color-on-primary)', borderRadius: '50%', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Check size={11} />
+                </span>
+              )}
+            </div>
+            <p style={{ fontSize: '11px', color: 'var(--md-sys-color-on-surface-variant)', margin: 0 }}>
+              Left-side colored traffic dots with Hyprland Super shortcuts (<code style={{ color: 'var(--md-sys-color-primary)', fontFamily: 'var(--font-mono)' }}>Super+Q</code>, <code style={{ color: 'var(--md-sys-color-primary)', fontFamily: 'var(--font-mono)' }}>Super+Space</code>).
+            </p>
+          </div>
+
+          {/* Option 3: Windows 11 */}
+          <div
+            onClick={() => setOsMode('windows')}
+            style={{
+              background: osMode === 'windows' ? 'var(--md-sys-color-surface-container-highest)' : 'var(--md-sys-color-surface-container-high)',
+              border: `2px solid ${osMode === 'windows' ? 'var(--md-sys-color-primary)' : 'var(--md-sys-color-outline-variant)'}`,
+              borderRadius: '16px',
+              padding: '14px',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Laptop size={14} color="#00a4ef" />
+                <span>Windows 11 (Fluent / Mica)</span>
+              </div>
+              {osMode === 'windows' && (
+                <span style={{ background: 'var(--md-sys-color-primary)', color: 'var(--md-sys-color-on-primary)', borderRadius: '50%', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Check size={11} />
+                </span>
+              )}
+            </div>
+            <p style={{ fontSize: '11px', color: 'var(--md-sys-color-on-surface-variant)', margin: 0 }}>
+              Right-side Windows 11 Fluent caption controls (<code style={{ color: 'var(--md-sys-color-primary)', fontFamily: 'var(--font-mono)' }}>—</code>, <code style={{ color: 'var(--md-sys-color-primary)', fontFamily: 'var(--font-mono)' }}>▢</code>, <code style={{ color: 'var(--md-sys-color-primary)', fontFamily: 'var(--font-mono)' }}>✕</code>) with signature red close hover.
+            </p>
+          </div>
+        </div>
+
+        {/* Shortcut Reference Comparison */}
+        <div style={{
+          background: 'rgba(0,0,0,0.3)',
+          border: '1px solid var(--md-sys-color-outline-variant)',
+          borderRadius: '12px',
+          padding: '12px 16px',
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: '16px',
+          fontSize: '12px'
+        }}>
+          <div>
+            <div style={{ fontWeight: 700, color: '#1793d1', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Terminal size={12} />
+              <span>Arch Linux / Hyprland Keybinds</span>
+            </div>
+            <div style={{ color: 'var(--md-sys-color-on-surface-variant)', fontSize: '11px', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
+              • Close: <b>Super + Q</b><br />
+              • Toggle Floating/Maximize: <b>Super + Space</b><br />
+              • Minimize/Workspace: <b>Super + S</b>
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontWeight: 700, color: '#00a4ef', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Laptop size={12} />
+              <span>Windows 11 Keybinds</span>
+            </div>
+            <div style={{ color: 'var(--md-sys-color-on-surface-variant)', fontSize: '11px', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>
+              • Close: <b>Alt + F4</b><br />
+              • Maximize / Snap: <b>Win + Up / Win + Z</b><br />
+              • Minimize: <b>Win + Down</b>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Hyprland & Wayland Window Rules */}
       <div style={{ background: 'var(--md-sys-color-surface-container)', border: '1px solid var(--md-sys-color-outline-variant)', borderRadius: '24px', padding: '24px', marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

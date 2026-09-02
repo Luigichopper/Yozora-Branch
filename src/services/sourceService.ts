@@ -1,5 +1,6 @@
 import { TorrentSource } from '../types/anime';
 import { db } from './db';
+import { AnimeMatcher } from './animeMatcher';
 
 export interface RSSFeedProvider {
   id: string;
@@ -300,11 +301,18 @@ class SourceService {
       const cleanItemTitle = normalize(title);
 
       // If a queryFilter was supplied, verify relevance:
-      // Either direct inclusion OR at least one significant keyword must match
       if (cleanQuery && queryKeywords.length > 0) {
+        const score = AnimeMatcher.calculateMatchScore(
+          { title: queryFilter || '' },
+          title,
+          undefined,
+          'all'
+        );
         const hasDirectMatch = cleanItemTitle.includes(cleanQuery);
-        const hasKeywordMatch = queryKeywords.some(kw => cleanItemTitle.includes(kw));
-        if (!hasDirectMatch && !hasKeywordMatch) {
+        // Ensure at least 60% of significant keywords match if not a direct substring
+        const matchedKw = queryKeywords.filter(kw => cleanItemTitle.includes(kw));
+        const hasKeywordMatch = matchedKw.length >= Math.ceil(queryKeywords.length * 0.6);
+        if (!hasDirectMatch && !hasKeywordMatch && score < 150) {
           return;
         }
       }
