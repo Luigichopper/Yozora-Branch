@@ -21,10 +21,13 @@ jobs:
     steps:
       - name: Update system & install dependencies
         run: |
-          pacman -Syu --noconfirm --needed base-devel nodejs npm rust git webkit2gtk webkit2gtk-4.1 libsoup libsoup3 gtk3 mpv pkgconf
+          pacman -Syu --noconfirm --needed base-devel nodejs npm rust git webkit2gtk-4.1 libsoup3 gtk3 mpv pkgconf meson vala gobject-introspection glib-networking
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
           git config --global --add safe.directory "*"
+          
+          # Install libsoup (2.4) from AUR for soup2-sys compatibility
+          su builder -c "git clone https://aur.archlinux.org/libsoup.git /tmp/libsoup && cd /tmp/libsoup && makepkg -si --noconfirm"
 
       - name: Checkout repository
         uses: actions/checkout@v4
