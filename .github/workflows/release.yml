@@ -21,7 +21,7 @@ jobs:
     steps:
       - name: Update system & install dependencies
         run: |
-          pacman -Syu --noconfirm --needed base-devel nodejs npm rust git webkit2gtk-4.1 libsoup3 gtk3 mpv pkgconf
+          pacman -Syu --noconfirm --needed base-devel nodejs npm rust git webkit2gtk webkit2gtk-4.1 libsoup libsoup3 gtk3 mpv pkgconf
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
           git config --global --add safe.directory "*"

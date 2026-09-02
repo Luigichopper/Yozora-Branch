@@ -10,7 +10,9 @@ depends=(
   'mpv'
   'rqbit'
   'gtk3'
+  'webkit2gtk'
   'webkit2gtk-4.1'
+  'libsoup'
   'libsoup3'
   'xdg-desktop-portal-hyprland'
 )
