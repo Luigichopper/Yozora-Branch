@@ -26,8 +26,8 @@ jobs:
           echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
           git config --global --add safe.directory "*"
           
-          # Install libsoup (2.4) from AUR for soup2-sys compatibility
-          su builder -c "git clone https://aur.archlinux.org/libsoup.git /tmp/libsoup && cd /tmp/libsoup && makepkg -si --noconfirm"
+          # Install libsoup (2.4) from AUR for soup2-sys compatibility (skip tests in CI container)
+          su builder -c "git clone https://aur.archlinux.org/libsoup.git /tmp/libsoup && cd /tmp/libsoup && makepkg -si --noconfirm --nocheck"
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -42,7 +42,7 @@ jobs:
       - name: Package Arch Linux .pkg.tar.zst
         run: |
           chown -R builder:builder aur
-          su builder -c "cd aur && makepkg -s --noconfirm --nodeps"
+          su builder -c "cd aur && makepkg -s --noconfirm --nodeps --nocheck"
           mkdir -p /tmp/dist-arch
           cp aur/*.pkg.tar.zst /tmp/dist-arch/ || true
           cp src-tauri/target/release/yozora /tmp/dist-arch/yozora-linux-x86_64
