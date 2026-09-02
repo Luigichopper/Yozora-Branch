@@ -24,21 +24,21 @@ jobs:
           pacman -Syu --noconfirm --needed base-devel nodejs npm rust git webkit2gtk-4.1 libsoup3 gtk3 mpv pkgconf
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          git config --global --add safe.directory "*"
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set workspace permissions
-        run: chown -R builder:builder /__w
-
       - name: Build Web Frontend & Tauri Binary
         run: |
-          su builder -c "npm install && chmod -R +x node_modules/.bin 2>/dev/null || true"
-          su builder -c "npm run build"
-          su builder -c "cd src-tauri && cargo build --release --locked"
+          npm install --include=optional
+          npm run build
+          cd src-tauri
+          cargo build --release --locked
 
       - name: Package Arch Linux .pkg.tar.zst
         run: |
+          chown -R builder:builder aur
           su builder -c "cd aur && makepkg -s --noconfirm --nodeps"
           mkdir -p /tmp/dist-arch
           cp aur/*.pkg.tar.zst /tmp/dist-arch/ || true
@@ -51,6 +51,7 @@ jobs:
           cp public/logo.svg /tmp/yozora-bundle/yozora.svg
           cp install.sh /tmp/yozora-bundle/
           tar -czf /tmp/dist-arch/yozora-linux-x86_64.tar.gz -C /tmp/yozora-bundle .
+          chmod -R 777 /tmp/dist-arch
 
       - name: Upload Arch & Standalone Linux Artifacts
         uses: actions/upload-artifact@v4
@@ -69,7 +70,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -81,7 +81,7 @@ jobs:
 
       - name: Install dependencies & build frontend
         run: |
-          npm install
+          npm install --include=optional
           chmod -R +x node_modules/.bin 2>/dev/null || true
           npm run build
 
@@ -112,14 +112,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install dependencies & build frontend
+        shell: bash
         run: |
-          npm install
+          npm install --include=optional
+          npm install @rollup/rollup-win32-x64-msvc --no-save
           npm run build
 
       - name: Build Windows release binary
