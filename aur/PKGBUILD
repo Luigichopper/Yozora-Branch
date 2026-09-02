@@ -30,7 +30,7 @@ build() {
   npm install
   npm run build
   cd src-tauri
-  cargo build --release --locked
+  cargo build --release
 }
 
 package() {

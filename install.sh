@@ -380,7 +380,7 @@ main() {
         npm run build
         log_info "Building Tauri native backend..."
         cd src-tauri
-        cargo build --release --locked
+        cargo build --release
         
         cp target/release/yozora "$BIN_DIR/yozora"
         chmod +x "$BIN_DIR/yozora"

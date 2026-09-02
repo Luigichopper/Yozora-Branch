@@ -53,7 +53,7 @@ dev:
 build:
 	npm install
 	npm run build
-	cd src-tauri && cargo build --release --locked
+	cd src-tauri && cargo build --release
 
 bundle:
 	npm install

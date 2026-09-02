@@ -34,7 +34,7 @@ jobs:
           npm install --include=optional
           npm run build
           cd src-tauri
-          cargo build --release --locked
+          cargo build --release
 
       - name: Package Arch Linux .pkg.tar.zst
         run: |
@@ -126,7 +126,7 @@ jobs:
       - name: Build Windows release binary
         run: |
           cd src-tauri
-          cargo build --release --locked
+          cargo build --release
 
       - name: Build Tauri Windows Bundles & Installers
         run: |
