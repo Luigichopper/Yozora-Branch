@@ -14,6 +14,17 @@ export interface StreamResult {
   stream_url: string;
 }
 
+export interface DiskCacheStats {
+  total_bytes: number;
+  file_count: number;
+  cache_dir: string;
+}
+
+export interface PurgeCacheResult {
+  freed_bytes: number;
+  deleted_files: number;
+}
+
 export interface RqbitTorrentStats {
   id: number;
   name: string;
@@ -150,7 +161,44 @@ class RqbitService {
       if (ok) deletedCount++;
     }
 
+    // Direct filesystem wipe via Tauri if running native
+    if (this.isTauri()) {
+      try {
+        const diskRes = await this.invokeTauri<PurgeCacheResult>('purge_disk_cache');
+        if (diskRes && diskRes.freed_bytes > freedBytes) {
+          freedBytes = diskRes.freed_bytes;
+        }
+        if (diskRes && diskRes.deleted_files > deletedCount) {
+          deletedCount = diskRes.deleted_files;
+        }
+      } catch (e) {
+        console.warn('Tauri purge_disk_cache failed:', e);
+      }
+    }
+
     return { deletedCount, freedBytes };
+  }
+
+  /**
+   * Get physical filesystem disk cache stats (bytes and file count)
+   */
+  public async getDiskCacheStats(): Promise<DiskCacheStats> {
+    if (this.isTauri()) {
+      try {
+        return await this.invokeTauri<DiskCacheStats>('get_disk_cache_stats');
+      } catch (e) {
+        console.warn('Tauri get_disk_cache_stats error:', e);
+      }
+    }
+
+    // Fallback: estimate based on active torrents list
+    const torrents = await this.listTorrents();
+    const total_bytes = torrents.reduce((sum, t) => sum + (t.progress_bytes || t.total_bytes || 0), 0);
+    return {
+      total_bytes,
+      file_count: torrents.length,
+      cache_dir: 'Browser Memory / Local Daemon'
+    };
   }
 
   /**
@@ -166,6 +214,17 @@ class RqbitService {
       const toDelete = torrents.slice(0, torrents.length - keepLatestCount);
       for (const t of toDelete) {
         await this.deleteTorrent(t.id, true, listenAddr);
+      }
+    }
+
+    // Enforce disk filesystem pruning via Tauri
+    if (this.isTauri()) {
+      try {
+        await this.invokeTauri<PurgeCacheResult>('prune_disk_cache', {
+          keepLatestCount
+        });
+      } catch (e) {
+        console.warn('Tauri prune_disk_cache error:', e);
       }
     }
   }

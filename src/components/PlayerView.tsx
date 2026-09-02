@@ -187,10 +187,23 @@ export const PlayerView: React.FC = () => {
           // Add default English sub track if none present
           if (extractedSubs.length > 0) {
             setSubtitleTracks(extractedSubs);
-            // Select preferred language or default
-            const match = extractedSubs.find(s => s.lang.toLowerCase().includes(preferredSubLang.toLowerCase())) || extractedSubs[0];
-            if (match) {
-              handleSelectSubtitleTrack(match);
+            // Check if auto-enable subtitles is turned on
+            const langPrefs = await subtitleService.getLanguagePreferences();
+            if (langPrefs.autoEnableSubtitles !== false) {
+              const targetLang = langPrefs.preferredSubLang || preferredSubLang || 'en';
+              // Find best matching subtitle track (by code, label, or english fallback)
+              const match = extractedSubs.find(s =>
+                s.lang.toLowerCase().includes(targetLang.toLowerCase()) ||
+                s.label.toLowerCase().includes(targetLang.toLowerCase())
+              ) || extractedSubs.find(s =>
+                s.lang.toLowerCase().includes('en') ||
+                s.label.toLowerCase().includes('english') ||
+                s.isDefault
+              ) || extractedSubs[0];
+
+              if (match) {
+                handleSelectSubtitleTrack(match, extractedSubs);
+              }
             }
           }
 
@@ -359,8 +372,16 @@ export const PlayerView: React.FC = () => {
 
       if (mirror.subtitles && mirror.subtitles.length > 0) {
         setSubtitleTracks(mirror.subtitles);
-        const match = mirror.subtitles.find(s => s.lang.toLowerCase().includes(preferredSubLang.toLowerCase())) || mirror.subtitles[0];
-        if (match) handleSelectSubtitleTrack(match);
+        const match = mirror.subtitles.find(s =>
+          s.lang.toLowerCase().includes(preferredSubLang.toLowerCase()) ||
+          s.label.toLowerCase().includes(preferredSubLang.toLowerCase())
+        ) || mirror.subtitles.find(s =>
+          s.lang.toLowerCase().includes('en') ||
+          s.label.toLowerCase().includes('english') ||
+          s.isDefault
+        ) || mirror.subtitles[0];
+
+        if (match) handleSelectSubtitleTrack(match, mirror.subtitles);
       }
 
       showToast(`Switched to stream: ${mirror.server}`, 'info');
@@ -404,7 +425,7 @@ export const PlayerView: React.FC = () => {
   };
 
   // Subtitle Selection & Fetching
-  const handleSelectSubtitleTrack = async (track: SubtitleTrack | null) => {
+  const handleSelectSubtitleTrack = async (track: SubtitleTrack | null, fallbackTracks?: SubtitleTrack[]) => {
     if (!track) {
       setActiveSubtitleTrack(null);
       setActiveSubtitleCue(null);
@@ -416,11 +437,32 @@ export const PlayerView: React.FC = () => {
     if (!track.cues || track.cues.length === 0) {
       if (track.url) {
         try {
-          showToast(`Loading subtitles: ${track.label}...`, 'info');
           const fetched = await subtitleService.fetchRemoteSubtitles(track.url, track.label, track.lang);
-          track.cues = fetched.cues;
-        } catch (err: any) {
-          showToast(`Failed to load subtitle file from ${track.url}`, 'error');
+          if (fetched && fetched.cues && fetched.cues.length > 0) {
+            track.cues = fetched.cues;
+            setActiveSubtitleTrack(track);
+            showToast(`Subtitles active: ${track.label} (${track.cues.length} cues)`, 'success');
+            return;
+          }
+        } catch {
+          // If preferred track fails, attempt fallback to next available track
+          if (fallbackTracks && fallbackTracks.length > 0) {
+            const nextCandidate = fallbackTracks.find(t => t.url !== track.url);
+            if (nextCandidate) {
+              try {
+                const fetchedAlt = await subtitleService.fetchRemoteSubtitles(nextCandidate.url || '', nextCandidate.label, nextCandidate.lang);
+                if (fetchedAlt?.cues && fetchedAlt.cues.length > 0) {
+                  nextCandidate.cues = fetchedAlt.cues;
+                  setActiveSubtitleTrack(nextCandidate);
+                  showToast(`Subtitles active: ${nextCandidate.label}`, 'success');
+                  return;
+                }
+              } catch {
+                // Ignore fallback fail
+              }
+            }
+          }
+          showToast(`Could not load remote subtitle track`, 'error');
         }
       }
     }

@@ -2,6 +2,7 @@
 
 use std::sync::Mutex;
 use std::process::{Child, Command};
+use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -23,6 +24,19 @@ pub struct StreamResult {
     pub file_name: String,
     pub file_size: u64,
     pub stream_url: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DiskCacheStats {
+    pub total_bytes: u64,
+    pub file_count: usize,
+    pub cache_dir: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PurgeCacheResult {
+    pub freed_bytes: u64,
+    pub deleted_files: usize,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -490,6 +504,174 @@ async fn open_mpv_player(
     launch_external_mpv(stream_url, title).await.map(|_| ())
 }
 
+// Helper to determine active cache directory paths
+fn resolve_cache_paths(custom_dir: Option<String>) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Some(ref d) = custom_dir {
+        if !d.trim().is_empty() {
+            paths.push(PathBuf::from(d.trim()));
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(temp) = std::env::var("TEMP") {
+            paths.push(PathBuf::from(temp).join("rqbit-streams"));
+        }
+        if let Ok(user_profile) = std::env::var("USERPROFILE") {
+            paths.push(PathBuf::from(user_profile).join(".cache").join("yozora").join("torrents"));
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        if Path::new("/tmp/rqbit-streams").exists() || Path::new("/tmp").is_dir() {
+            paths.push(PathBuf::from("/tmp/rqbit-streams"));
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            paths.push(PathBuf::from(home).join(".cache").join("yozora").join("torrents"));
+        }
+    }
+
+    paths
+}
+
+fn calculate_dir_stats(dir: &Path) -> (u64, usize) {
+    let mut total_size = 0u64;
+    let mut file_count = 0usize;
+    if dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Ok(meta) = entry.metadata() {
+                        total_size += meta.len();
+                        file_count += 1;
+                    }
+                } else if path.is_dir() {
+                    let (sub_size, sub_count) = calculate_dir_stats(&path);
+                    total_size += sub_size;
+                    file_count += sub_count;
+                }
+            }
+        }
+    }
+    (total_size, file_count)
+}
+
+// 6. Get real filesystem disk cache stats (bytes and file count)
+#[tauri::command]
+async fn get_disk_cache_stats(custom_dir: Option<String>) -> Result<DiskCacheStats, String> {
+    let paths = resolve_cache_paths(custom_dir);
+    let mut total_bytes = 0u64;
+    let mut total_files = 0usize;
+    let mut primary_dir = String::new();
+
+    for (idx, p) in paths.iter().enumerate() {
+        if idx == 0 {
+            primary_dir = p.to_string_lossy().to_string();
+        }
+        if p.exists() {
+            let (b, f) = calculate_dir_stats(p);
+            total_bytes += b;
+            total_files += f;
+        }
+    }
+
+    Ok(DiskCacheStats {
+        total_bytes,
+        file_count: total_files,
+        cache_dir: primary_dir,
+    })
+}
+
+// 7. Forcefully purge all physical cached torrent video and piece files from disk
+#[tauri::command]
+async fn purge_disk_cache(custom_dir: Option<String>) -> Result<PurgeCacheResult, String> {
+    let paths = resolve_cache_paths(custom_dir);
+    let mut freed_bytes = 0u64;
+    let mut deleted_files = 0usize;
+
+    for p in paths {
+        if p.exists() {
+            let (b, f) = calculate_dir_stats(&p);
+            freed_bytes += b;
+            deleted_files += f;
+
+            if let Ok(entries) = std::fs::read_dir(&p) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file() {
+                        let _ = std::fs::remove_file(&path);
+                    } else if path.is_dir() {
+                        let _ = std::fs::remove_dir_all(&path);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(PurgeCacheResult {
+        freed_bytes,
+        deleted_files,
+    })
+}
+
+// 8. Prune oldest torrent directories or files to enforce retention count (e.g. 1 episode)
+#[tauri::command]
+async fn prune_disk_cache(keep_latest_count: usize, custom_dir: Option<String>) -> Result<PurgeCacheResult, String> {
+    let paths = resolve_cache_paths(custom_dir);
+    let mut freed_bytes = 0u64;
+    let mut deleted_files = 0usize;
+
+    for p in paths {
+        if !p.exists() {
+            continue;
+        }
+
+        let mut entries_with_time: Vec<(PathBuf, std::time::SystemTime)> = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&p) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let modified = entry.metadata()
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                entries_with_time.push((path, modified));
+            }
+        }
+
+        // Sort descending by modified time (newest first)
+        entries_with_time.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Delete any beyond keep_latest_count
+        if entries_with_time.len() > keep_latest_count {
+            for (to_delete, _) in entries_with_time.iter().skip(keep_latest_count) {
+                let (b, f) = if to_delete.is_dir() {
+                    calculate_dir_stats(to_delete)
+                } else if let Ok(m) = to_delete.metadata() {
+                    (m.len(), 1)
+                } else {
+                    (0, 0)
+                };
+
+                freed_bytes += b;
+                deleted_files += f;
+
+                if to_delete.is_dir() {
+                    let _ = std::fs::remove_dir_all(to_delete);
+                } else {
+                    let _ = std::fs::remove_file(to_delete);
+                }
+            }
+        }
+    }
+
+    Ok(PurgeCacheResult {
+        freed_bytes,
+        deleted_files,
+    })
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(AppState {
@@ -503,7 +685,10 @@ fn main() {
             start_torrent_stream,
             launch_external_mpv,
             open_mpv_player,
-            fetch_rss_feed
+            fetch_rss_feed,
+            get_disk_cache_stats,
+            purge_disk_cache,
+            prune_disk_cache
         ])
         .run(tauri::generate_context!())
         .expect("error while running Yozora application");

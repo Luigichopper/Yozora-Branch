@@ -539,22 +539,44 @@ class AniListMetadataService {
 
     // Accurate episodes calculation & streaming metadata
     const streamingEps: any[] = m.streamingEpisodes || [];
+    
+    // Find highest explicit episode number from streaming episodes
+    let maxStreamEpNumber = 0;
+    const streamMap = new Map<number, any>();
+    for (const s of streamingEps) {
+      if (!s || !s.title) continue;
+      // Match patterns: "Episode 1", "EP 01", "Episode 1 - Title", "^01 - Title", "^1. Title"
+      const epMatch = s.title.match(/Episode\s*(\d+)/i) ||
+                      s.title.match(/\bEP\.?\s*(\d+)/i) ||
+                      s.title.match(/^(\d+)[\s.:-]/) ||
+                      s.title.match(/#(\d+)/);
+      if (epMatch) {
+        const num = parseInt(epMatch[1], 10);
+        if (num > 0 && num < 3000) {
+          streamMap.set(num, s);
+          if (num > maxStreamEpNumber) {
+            maxStreamEpNumber = num;
+          }
+        }
+      }
+    }
+
     let totalEps = 12;
     if (isMovie || isMusic) {
       totalEps = 1;
-    } else if (m.episodes && m.episodes > 1) {
-      totalEps = m.episodes;
+    } else if (m.episodes && m.episodes > 0) {
+      totalEps = Math.max(m.episodes, maxStreamEpNumber);
     } else if (m.status === 'RELEASING' && m.nextAiringEpisode?.episode) {
-      totalEps = Math.max(m.episodes || 12, m.nextAiringEpisode.episode);
-    } else if (streamingEps.length > 1) {
+      totalEps = Math.max(m.nextAiringEpisode.episode, maxStreamEpNumber, 12);
+    } else if (maxStreamEpNumber > 0) {
+      totalEps = maxStreamEpNumber;
+    } else if (streamingEps.length > 0) {
       totalEps = streamingEps.length;
     } else if (m.episodes === 1 && (m.format === 'TV' || m.format === 'TV_SHORT')) {
       // Preliminary TV placeholder
       totalEps = 12;
     } else if (m.episodes === 1) {
       totalEps = 1;
-    } else if (m.nextAiringEpisode?.episode) {
-      totalEps = Math.max(12, m.nextAiringEpisode.episode);
     } else if (isOVA) {
       totalEps = m.episodes || (streamingEps.length > 0 ? streamingEps.length : 1);
     } else {
@@ -565,12 +587,15 @@ class AniListMetadataService {
 
     const episodes: Episode[] = Array.from({ length: totalEps }, (_, i) => {
       const epNum = i + 1;
-      const streamInfo = streamingEps.find((s: any) => {
-        const match = s.title?.match(/Episode\s+(\d+)/i) || s.title?.match(/(\d+)/);
-        return match ? parseInt(match[1]) === epNum : false;
-      }) || streamingEps[i];
+      const streamInfo = streamMap.get(epNum) || (streamingEps[i]?.title?.includes(epNum.toString()) ? streamingEps[i] : null);
 
-      const epTitle = streamInfo?.title || (isMovie ? 'Full Movie' : `Episode ${epNum.toString().padStart(2, '0')}`);
+      let epTitle = streamInfo?.title;
+      if (!epTitle) {
+        epTitle = isMovie ? 'Full Movie' : `Episode ${epNum.toString().padStart(2, '0')}`;
+      } else {
+        // Clean up duplicated prefix if needed (e.g. "Episode 1 - Episode 1")
+        epTitle = epTitle.trim();
+      }
 
       let epAirDate = airDateStart;
       if (m.startDate?.year && m.startDate?.month && m.startDate?.day) {

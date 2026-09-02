@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext';
 import { MATUGEN_PALETTES } from '../theme/matugen';
 import { sourceService, RSSFeedProvider } from '../services/sourceService';
 import { matugenService } from '../services/matugenService';
-import { rqbitService, RqbitStatus, RqbitTorrentStats } from '../services/rqbitService';
+import { rqbitService, RqbitStatus, RqbitTorrentStats, DiskCacheStats } from '../services/rqbitService';
 import { anilistService } from '../services/tracking/anilist';
 import { db } from '../services/db';
 import { subtitleService, SUPPORTED_LANGUAGES, DEFAULT_SUBTITLE_STYLE, SubtitleStyleConfig, LanguagePreferenceConfig } from '../services/subtitleService';
@@ -33,6 +33,7 @@ export const SettingsView: React.FC = () => {
   const [autoCleanupCache, setAutoCleanupCache] = useState(true);
   const [retentionCount, setRetentionCount] = useState(1);
   const [cachedTorrents, setCachedTorrents] = useState<RqbitTorrentStats[]>([]);
+  const [diskStats, setDiskStats] = useState<DiskCacheStats | null>(null);
   const [isPurging, setIsPurging] = useState(false);
   const [osTab, setOsTab] = useState<'windows' | 'linux'>('windows');
   const wallpaperInputRef = useRef<HTMLInputElement | null>(null);
@@ -41,6 +42,7 @@ export const SettingsView: React.FC = () => {
   const [defaultAudioMode, setDefaultAudioMode] = useState<'sub' | 'dub' | 'dual' | 'all'>('sub');
   const [preferredSubLang, setPreferredSubLang] = useState<string>('en');
   const [preferredAudioLang, setPreferredAudioLang] = useState<string>('ja');
+  const [autoEnableSubtitles, setAutoEnableSubtitles] = useState<boolean>(true);
   const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyleConfig>(DEFAULT_SUBTITLE_STYLE);
 
   const [anilistApiOnline, setAnilistApiOnline] = useState<boolean>(true);
@@ -77,6 +79,7 @@ export const SettingsView: React.FC = () => {
       setDefaultAudioMode(langPrefs.defaultAudioMode);
       setPreferredSubLang(langPrefs.preferredSubLang);
       setPreferredAudioLang(langPrefs.preferredAudioLang);
+      setAutoEnableSubtitles(langPrefs.autoEnableSubtitles !== false);
 
       const savedSubStyle = await subtitleService.getSubtitleStyle();
       setSubtitleStyle(savedSubStyle);
@@ -88,6 +91,9 @@ export const SettingsView: React.FC = () => {
         const torrents = await rqbitService.listTorrents(`127.0.0.1:${savedPort}`);
         setCachedTorrents(torrents);
       }
+
+      const dStats = await rqbitService.getDiskCacheStats();
+      setDiskStats(dStats);
 
       // Measure real AniList GraphQL connectivity
       try {
@@ -128,6 +134,8 @@ export const SettingsView: React.FC = () => {
     try {
       const res = await rqbitService.purgeAllTorrentsAndCache(`127.0.0.1:${rqbitListenPort}`);
       setCachedTorrents([]);
+      const nextStats = await rqbitService.getDiskCacheStats();
+      setDiskStats(nextStats);
       showToast(`Purged ${res.deletedCount} torrents and freed ${formatBytes(res.freedBytes)} of disk space!`, 'success');
     } catch (e: any) {
       showToast(e?.message || 'Failed to purge rqbit cache.', 'error');
@@ -140,6 +148,8 @@ export const SettingsView: React.FC = () => {
     const ok = await rqbitService.deleteTorrent(id, true, `127.0.0.1:${rqbitListenPort}`);
     if (ok) {
       setCachedTorrents(prev => prev.filter(t => t.id !== id));
+      const nextStats = await rqbitService.getDiskCacheStats();
+      setDiskStats(nextStats);
       showToast('Deleted torrent and erased video file from disk.', 'success');
     } else {
       showToast('Failed to delete torrent file.', 'error');
@@ -149,7 +159,9 @@ export const SettingsView: React.FC = () => {
   const handleRefreshCacheList = async () => {
     const torrents = await rqbitService.listTorrents(`127.0.0.1:${rqbitListenPort}`);
     setCachedTorrents(torrents);
-    showToast(`Found ${torrents.length} cached releases in rqbit.`, 'info');
+    const nextStats = await rqbitService.getDiskCacheStats();
+    setDiskStats(nextStats);
+    showToast(`Found ${torrents.length} cached releases in rqbit. Disk usage: ${formatBytes(nextStats.total_bytes)}`, 'info');
   };
 
   const handleToggleExternalMpv = async () => {
@@ -1041,6 +1053,36 @@ return {
             </div>
           </div>
 
+          {/* Physical Filesystem Live Storage Banner */}
+          {diskStats && (
+            <div
+              style={{
+                background: 'rgba(0,0,0,0.3)',
+                border: '1px solid var(--md-sys-color-outline-variant)',
+                borderRadius: '10px',
+                padding: '10px 14px',
+                marginBottom: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: '12px',
+                flexWrap: 'wrap',
+                gap: '8px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <HardDrive size={14} color="var(--md-sys-color-primary)" />
+                <span style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>Physical Disk Usage:</span>
+                <span style={{ color: '#fff', fontWeight: 700 }}>{formatBytes(diskStats.total_bytes)}</span>
+                <span style={{ color: 'var(--md-sys-color-on-surface-variant)', fontSize: '11px' }}>({diskStats.file_count} files)</span>
+              </div>
+
+              <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--md-sys-color-on-surface-variant)', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '6px' }}>
+                Location: {diskStats.cache_dir}
+              </div>
+            </div>
+          )}
+
           {/* Active Cached Torrents in rqbit list */}
           {cachedTorrents.length > 0 ? (
             <div>
@@ -1214,6 +1256,44 @@ return {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+          {/* Automatic Subtitles Activation Toggle */}
+          <div
+            style={{
+              background: 'var(--md-sys-color-surface-container-high)',
+              border: '1px solid var(--md-sys-color-outline-variant)',
+              borderRadius: '14px',
+              padding: '14px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between'
+            }}
+          >
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>
+                  Auto-Enable Subtitles
+                </label>
+                <input
+                  type="checkbox"
+                  checked={autoEnableSubtitles}
+                  onChange={async () => {
+                    const next = !autoEnableSubtitles;
+                    setAutoEnableSubtitles(next);
+                    await subtitleService.saveLanguagePreferences({ autoEnableSubtitles: next });
+                    showToast(next ? 'Subtitles will automatically load and activate' : 'Subtitles start disabled', 'info');
+                  }}
+                  style={{ width: '18px', height: '18px', accentColor: 'var(--md-sys-color-primary)', cursor: 'pointer' }}
+                />
+              </div>
+              <p style={{ fontSize: '11px', color: 'var(--md-sys-color-on-surface-variant)' }}>
+                Automatically parses and syncs subtitles when opening video streams without requiring manual click.
+              </p>
+            </div>
+            <div style={{ fontSize: '10px', color: 'var(--md-sys-color-primary)', fontFamily: 'var(--font-mono)', marginTop: '8px' }}>
+              Status: {autoEnableSubtitles ? '✓ Automated (Active)' : 'Manual Mode'}
+            </div>
+          </div>
+
           {/* Default Audio Mode */}
           <div
             style={{

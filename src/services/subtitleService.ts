@@ -270,18 +270,37 @@ class SubtitleService {
    */
   public async fetchRemoteSubtitles(url: string, label = 'Subtitles', lang = 'en'): Promise<SubtitleTrack> {
     const fetchWithTimeout = async (targetUrl: string): Promise<string> => {
-      const res = await fetch(targetUrl, { signal: AbortSignal.timeout(4000) });
+      const res = await fetch(targetUrl, { signal: AbortSignal.timeout(5000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.text();
     };
 
     let rawText = '';
-    try {
-      rawText = await fetchWithTimeout(url);
-    } catch {
-      // CORS proxy fallback
-      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-      rawText = await fetchWithTimeout(proxyUrl);
+    const fetchAttempts = [
+      // 1. Direct fetch
+      () => fetchWithTimeout(url),
+      // 2. AllOrigins CORS proxy
+      () => fetchWithTimeout(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`),
+      // 3. Corsproxy.io fallback
+      () => fetchWithTimeout(`https://corsproxy.io/?url=${encodeURIComponent(url)}`),
+      // 4. CodeTab CORS proxy
+      () => fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`)
+    ];
+
+    for (const attempt of fetchAttempts) {
+      try {
+        const text = await attempt();
+        if (text && text.trim().length > 10) {
+          rawText = text;
+          break;
+        }
+      } catch {
+        // Try next proxy
+      }
+    }
+
+    if (!rawText) {
+      throw new Error(`Failed to load subtitle file from remote source.`);
     }
 
     const cues = this.parseSubtitleContent(rawText, url);
